@@ -13,15 +13,15 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 from pathlib import Path
 from datetime import timedelta
 import os
+from decouple import config
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+SECRET_KEY = config("SECRET_KEY")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-z4cyhjpkc3l+7@1tn7=@(shbi7+x_k)=btem4g7efu!r9)f4iw'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     "channels",
     'django_cotton',
     'rest_framework',
+    'rest_framework_simplejwt',
     'corsheaders',
     'django_celery_results',
     
@@ -96,16 +97,15 @@ ASGI_APPLICATION = "crm.asgi.application"
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
+from decouple import config
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'crm_db',
-        'USER': 'postgres',
-        'PASSWORD':'Pragya',
-        'HOST':'localhost',
-        'PORT':'5432',
-        
-
+        'NAME': config('DB_NAME'),
+        'USER': config('DB_USER'),
+        'PASSWORD': config('DB_PASSWORD'),
+        'HOST': config('DB_HOST', default='localhost'),
+        'PORT': config('DB_PORT', default='5432'),
     }
 }
 
@@ -155,6 +155,10 @@ AUTH_USER_MODEL = "accounts.User"
 
 CELERY_BROKER_URL = "redis://localhost:6379/0"
 CELERY_RESULT_BACKEND = "django-db"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
 
 
 
@@ -174,18 +178,14 @@ SIMPLE_JWT = {
 
 AUTH_USER_MODEL = "accounts.User"
 
-
+#sending mails
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-
 EMAIL_HOST = "smtp.gmail.com"
 EMAIL_PORT = 587
-
 EMAIL_USE_TLS = True
 EMAIL_USE_SSL = False
-
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
-
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 CHANNEL_LAYERS = {
