@@ -21,6 +21,7 @@ export default function CurrentUser({onUserLoaded}) {
                     return;
                 }
                 setCurrentUser(data)
+                //console.log("Current user fetched:", data);
                 onUserLoaded(data)
             } catch (error) {
                 console.error("Error fecging current user")

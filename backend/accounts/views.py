@@ -5,7 +5,8 @@ from .serializers import (SignupSerializer,
                           CurrentUserSerializer,
                           EmployeeSerializer,
                           ManagerSerializer,
-                          AvailableEmployeeSerializer)
+                          AvailableEmployeeSerializer,
+                          ChangePasswordSerializer)
 from rest_framework.generics import CreateAPIView
 from rest_framework.views import APIView
 from django.contrib import messages
@@ -31,6 +32,7 @@ class SignUpApi(CreateAPIView):
 class LoginApi(APIView):
     serializer_class = LoginSerializer
     
+    
     def post(self,request):
         serializer = self.serializer_class(data=request.data)
         
@@ -40,11 +42,12 @@ class LoginApi(APIView):
             password = serializer.validated_data["password"]
             
             try:
-                user = User.objects.get(email=email)
+                user = User.objects.only(
+                    "id","password",).get(email=email)              
                 
             except User.DoesNotExist:
                 return Response(
-                         {"message": "uSER dOES NOT EXISTS"},
+                         {"message": "USER DOES NOT EXISTS"},
                          status=404
                 )
                 
@@ -80,7 +83,7 @@ class EmployeeListAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        employees = User.objects.filter(role='employee', company=request.user.company)
+        employees = User.objects.filter(role__in=['employee','manager'], company=request.user.company)
         serializer = EmployeeSerializer(employees, many=True)
         return Response(serializer.data)  
     
@@ -112,3 +115,29 @@ class AvailableEmployeeListAPIView(APIView):
         return Response(serializer.data)
     
     
+class ChangePasswordAPIView(APIView):   
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            
+            user = request.user 
+            
+            if not user.check_password(serializer.data.get("old_password")):
+                return Response({"old_password": ["Wrong password."]}, status=status.HTTP_400_BAD_REQUEST)
+            
+            user.set_password(serializer.data.get("new_password"))
+            user.save(update_fields=["password"])
+            
+            refresh = RefreshToken.for_user(user)
+
+            
+            return Response({
+                "message": "Password updated successfully.",
+                "access": str(refresh.access_token),
+                "refresh": str(refresh)
+            }, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -30,7 +30,7 @@ class ListMessagesHistoryAPIView(APIView):
         )
 
 
-from .models import Conversation
+
 
 
 class RecentConversationAPIView(APIView):
@@ -72,7 +72,7 @@ class RecentConversationAPIView(APIView):
 
                 other_user = conversation.members.exclude(
                     id=request.user.id
-                ).first()
+                ).only("id", "username").first()
 
                 dm.append({
                     "conversation_id": conversation.id,

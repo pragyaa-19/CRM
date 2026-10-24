@@ -1,9 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import {
-  BarChart3, Users, DollarSign,
-  Menu, X, Search, Bell, Settings, Home,
-  Briefcase, MessageSquare, Plus
-} from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import Statecard from '../components/Statecard';
 import Activity from '../components/Activity';

@@ -4,6 +4,7 @@ import Sidebar from "../components/Sidebar";
 import CurrentUser from "../components/CurrentUser";
 import Header from "../components/Header";
 import AddEmployee from "./AddEmployee";
+import { fetchEmployees } from "../api/employees";
 
 const API_URL =
     import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
@@ -22,6 +23,9 @@ export default function Leads({ refresh }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
+    // Employees for the edit modal
+    const [employees, setEmployees] = useState([]);
+
     // Edit lead
     const [editingLead, setEditingLead] = useState(null);
     const [saving, setSaving] = useState(false);
@@ -32,7 +36,10 @@ export default function Leads({ refresh }) {
 
     // Add Employee modal
     const [isModalOpen, setIsModalOpen] = useState(false);
-
+    const [nextPage, setNextPage] = useState(null);
+    const [previousPage, setPreviousPage] = useState(null);
+    const [totalLeads, setTotalLeads] = useState(0);
+    const [currentPage, setCurrentPage] = useState(1);
     const token = localStorage.getItem("access_token");
 
     // Fetch leads
@@ -44,8 +51,10 @@ export default function Leads({ refresh }) {
                 setLoading(true);
                 setError("");
 
+                const token = localStorage.getItem("access_token");
+
                 const response = await fetch(
-                    `${API_URL}/leads/api/create-lead/`,
+                    `${API_URL}/leads/api/create-lead/?page=${currentPage}&page_size=10`,
                     {
                         headers: {
                             Authorization: `Bearer ${token}`,
@@ -57,22 +66,18 @@ export default function Leads({ refresh }) {
                 const data = await response.json();
 
                 if (!response.ok) {
-                    throw new Error(
-                        data.detail || "Unable to load leads."
-                    );
+                    throw new Error(data.detail || "Unable to load leads.");
                 }
 
-                setLeads(
-                    Array.isArray(data)
-                        ? data
-                        : data.results ?? []
-                );
+                const leadsList = Array.isArray(data) ? data : data.results ?? [];
+
+                setLeads(leadsList);
+                setNextPage(Array.isArray(data) ? null : data.next);
+                setPreviousPage(Array.isArray(data) ? null : data.previous);
+                setTotalLeads(Array.isArray(data) ? data.length : data.count ?? 0);
             } catch (err) {
                 if (err.name !== "AbortError") {
-                    console.error("Fetch leads error:", err);
-                    setError(
-                        err.message || "Something went wrong."
-                    );
+                    setError(err.message || "Something went wrong.");
                 }
             } finally {
                 if (!controller.signal.aborted) {
@@ -84,7 +89,33 @@ export default function Leads({ refresh }) {
         fetchLeads();
 
         return () => controller.abort();
-    }, [refresh, token]);
+    }, [refresh, currentPage]);
+
+    // Fetch employees using the reusable API function
+    useEffect(() => {
+        const controller = new AbortController();
+
+        const loadEmployees = async () => {
+            try {
+                const data = await fetchEmployees({
+                    signal: controller.signal,
+                });
+
+                setEmployees(data);
+            } catch (err) {
+                if (err.name !== "AbortError") {
+                    //console.error(
+                    //    "Error fetching employees:",
+                    //    err
+                    //);
+                }
+            }
+        };
+
+        loadEmployees();
+
+        return () => controller.abort();
+    }, []);
 
     // Status badge styling
     const getStatusStyle = (status) => {
@@ -119,6 +150,17 @@ export default function Leads({ refresh }) {
         }));
     };
 
+    // Open edit modal with the selected lead
+    const handleEditClick = (lead) => {
+        setEditingLead({
+            ...lead,
+            assigned_to:
+                lead.assigned_to == null
+                    ? ""
+                    : String(lead.assigned_to),
+        });
+    };
+
     // Save edited lead
     const handleUpdate = async (e) => {
         e.preventDefault();
@@ -141,17 +183,21 @@ export default function Leads({ refresh }) {
                         email: editingLead.email,
                         contact_num: editingLead.contact_num,
                         status: editingLead.status,
+                        assigned_to:
+                            editingLead.assigned_to === ""
+                                ? null
+                                : editingLead.assigned_to,
                     }),
                 }
             );
 
-            const data = await response.json();
+            const data = await response.json().catch(() => null);
 
             if (!response.ok) {
-                console.error("Update failed:", data);
+                //console.error("Update failed:", data);
 
                 alert(
-                    typeof data === "object"
+                    data && typeof data === "object"
                         ? JSON.stringify(data)
                         : "Failed to update lead."
                 );
@@ -161,17 +207,43 @@ export default function Leads({ refresh }) {
 
             // Update the lead in local state
             setLeads((prevLeads) =>
-                prevLeads.map((lead) =>
-                    String(lead.id) === String(editingLead.id)
-                        ? { ...lead, ...editingLead }
-                        : lead
-                )
+                prevLeads.map((lead) => {
+                    if (
+                        String(lead.id) !==
+                        String(editingLead.id)
+                    ) {
+                        return lead;
+                    }
+
+                    const selectedEmployee = employees.find(
+                        (employee) =>
+                            String(employee.id) ===
+                            String(editingLead.assigned_to)
+                    );
+
+                    return {
+                        ...lead,
+                        ...editingLead,
+                        assigned_to:
+                            editingLead.assigned_to === ""
+                                ? null
+                                : editingLead.assigned_to,
+                        assigned_to_name: selectedEmployee
+                            ? `${selectedEmployee.first_name || ""} ${selectedEmployee.last_name || ""
+                                }`.trim()
+                            : editingLead.assigned_to === ""
+                                ? null
+                                : lead.assigned_to_name,
+                    };
+                })
             );
 
             setEditingLead(null);
         } catch (err) {
-            console.error("Update lead error:", err);
-            alert("Something went wrong while updating the lead.");
+            //console.error("Update lead error:", err);
+            alert(
+                "Something went wrong while updating the lead."
+            );
         } finally {
             setSaving(false);
         }
@@ -197,9 +269,11 @@ export default function Leads({ refresh }) {
             );
 
             if (!response.ok) {
-                const data = await response.json().catch(() => null);
+                const data = await response
+                    .json()
+                    .catch(() => null);
 
-                console.error("Delete failed:", data);
+                //console.error("Delete failed:", data);
                 alert("Failed to delete lead.");
 
                 return;
@@ -208,18 +282,20 @@ export default function Leads({ refresh }) {
             // Remove the deleted lead from the current UI
             setLeads((prevLeads) =>
                 prevLeads.filter(
-                    (lead) => String(lead.id) !== String(leadId)
+                    (lead) =>
+                        String(lead.id) !== String(leadId)
                 )
             );
         } catch (err) {
-            console.error("Delete lead error:", err);
-            alert("Something went wrong while deleting the lead.");
+            //console.error("Delete lead error:", err);
+            alert(
+                "Something went wrong while deleting the lead."
+            );
         }
     };
 
     return (
         <div className="flex h-screen overflow-hidden bg-gray-50 font-sans">
-
             {/* Load logged-in user */}
             <CurrentUser onUserLoaded={setCurrentUser} />
 
@@ -232,7 +308,6 @@ export default function Leads({ refresh }) {
 
             {/* Main page area */}
             <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-
                 {/* Common header and sidebar toggle */}
                 <Header
                     isSidebarOpen={isSidebarOpen}
@@ -242,7 +317,6 @@ export default function Leads({ refresh }) {
 
                 {/* Scrollable Leads content */}
                 <div className="flex-1 overflow-y-auto p-6">
-
                     {/* Page heading */}
                     <div className="mb-6">
                         <h1 className="text-2xl font-bold text-gray-900">
@@ -256,7 +330,6 @@ export default function Leads({ refresh }) {
 
                     {/* Leads card */}
                     <Card className="overflow-hidden">
-
                         {/* Loading */}
                         {loading && (
                             <div className="p-8 text-center text-gray-500">
@@ -275,7 +348,6 @@ export default function Leads({ refresh }) {
                         {!loading && !error && (
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left">
-
                                     <thead>
                                         <tr className="border-b border-gray-200 text-sm text-gray-500">
                                             <th className="px-6 py-4 font-medium">
@@ -341,9 +413,7 @@ export default function Leads({ refresh }) {
                                                         <button
                                                             type="button"
                                                             onClick={() =>
-                                                                setEditingLead({
-                                                                    ...lead,
-                                                                })
+                                                                handleEditClick(lead)
                                                             }
                                                             className="font-medium text-blue-600 hover:text-blue-800"
                                                         >
@@ -375,20 +445,44 @@ export default function Leads({ refresh }) {
                                             </tr>
                                         )}
                                     </tbody>
-
                                 </table>
                             </div>
                         )}
-
                     </Card>
+                    <div className="mt-4 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-sm text-gray-600">
+                            Total leads: <span className="font-semibold">{totalLeads}</span>
+                            {" · "}
+                            Page <span className="font-semibold">{currentPage}</span>
+                        </p>
+
+                        <div className="flex items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                                disabled={!previousPage || loading}
+                                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                Previous
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage((page) => page + 1)}
+                                disabled={!nextPage || loading}
+                                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </main>
 
             {/* Edit Lead modal */}
             {editingLead && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
-
+                <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
+                    <div className="my-auto w-full max-w-lg rounded-2xl bg-white shadow-xl">
                         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-5">
                             <h2 className="text-lg font-bold text-gray-900">
                                 Edit Lead
@@ -408,7 +502,6 @@ export default function Leads({ refresh }) {
                             onSubmit={handleUpdate}
                             className="space-y-5 p-6"
                         >
-
                             {/* Name */}
                             <div>
                                 <label
@@ -485,10 +578,50 @@ export default function Leads({ refresh }) {
                                 >
                                     <option value="new">New</option>
                                     <option value="called">Called</option>
-                                    <option value="interested">Interested</option>
+                                    <option value="interested">
+                                        Interested
+                                    </option>
                                     <option value="won">Won</option>
                                     <option value="lost">Lost</option>
                                 </select>
+                            </div>
+
+                            {/* Assigned To */}
+                            <div>
+                                <label
+                                    htmlFor="edit-assigned-to"
+                                    className="mb-2 block text-sm font-medium text-gray-700"
+                                >
+                                    Assigned To
+                                </label>
+
+                                <select
+                                    id="edit-assigned-to"
+                                    name="assigned_to"
+                                    value={editingLead.assigned_to ?? ""}
+                                    onChange={handleEditChange}
+                                    className="w-full rounded-lg border border-gray-200 px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    <option value="">
+                                        Unassigned
+                                    </option>
+
+                                    {employees.map((employee) => (
+                                        <option
+                                            key={employee.id}
+                                            value={String(employee.id)}
+                                        >
+                                            {employee.first_name}{" "}
+                                            {employee.last_name}
+                                        </option>
+                                    ))}
+                                </select>
+
+                                {employees.length === 0 && (
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        No employees available.
+                                    </p>
+                                )}
                             </div>
 
                             {/* Buttons */}
@@ -511,7 +644,6 @@ export default function Leads({ refresh }) {
                                         : "Save Changes"}
                                 </button>
                             </div>
-
                         </form>
                     </div>
                 </div>
@@ -523,7 +655,6 @@ export default function Leads({ refresh }) {
                     onClose={() => setIsModalOpen(false)}
                 />
             )}
-
         </div>
     );
 }

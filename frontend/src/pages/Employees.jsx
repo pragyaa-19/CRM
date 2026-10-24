@@ -6,7 +6,10 @@ import CurrentUser from "../components/CurrentUser";
 import Header from "../components/Header";
 import AddEmployee from "./AddEmployee";
 
-const API_URL = "http://127.0.0.1:8000";
+import { fetchEmployees } from "../api/employees";
+
+const API_URL =
+    import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 // Get a person's display name
 function getPersonName(person) {
@@ -49,41 +52,24 @@ export default function Employees() {
 
     const token = localStorage.getItem("access_token");
 
-    // Fetch employees
+    // Fetch employees using the reusable API function
     useEffect(() => {
         const controller = new AbortController();
 
-        async function fetchEmployees() {
+        async function loadEmployees() {
             try {
                 setLoadingEmployees(true);
                 setEmployeeError("");
 
-                const response = await fetch(
-                    `${API_URL}/api/employees/`,
-                    {
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                        },
-                        signal: controller.signal,
-                    }
-                );
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(
-                        data.detail || "Unable to load employees."
-                    );
-                }
-
-                const employeeList = Array.isArray(data)
-                    ? data
-                    : data.results ?? [];
+                const employeeList = await fetchEmployees({
+                    signal: controller.signal,
+                });
 
                 setEmployees(employeeList);
             } catch (err) {
                 if (err.name !== "AbortError") {
                     console.error("Employees API error:", err);
+
                     setEmployeeError(
                         err.message || "Unable to load employees."
                     );
@@ -95,7 +81,7 @@ export default function Employees() {
             }
         }
 
-        fetchEmployees();
+        loadEmployees();
 
         return () => controller.abort();
     }, [token]);
@@ -104,7 +90,7 @@ export default function Employees() {
     useEffect(() => {
         const controller = new AbortController();
 
-        async function fetchManagers() {
+        async function loadManagers() {
             try {
                 setLoadingManagers(true);
                 setManagerError("");
@@ -135,6 +121,7 @@ export default function Employees() {
             } catch (err) {
                 if (err.name !== "AbortError") {
                     console.error("Managers API error:", err);
+
                     setManagerError(
                         err.message || "Unable to load managers."
                     );
@@ -146,12 +133,12 @@ export default function Employees() {
             }
         }
 
-        fetchManagers();
+        loadManagers();
 
         return () => controller.abort();
     }, [token]);
 
-    // Combine both lists
+    // Combine managers and employees
     const allPeople = [
         ...managers.map((manager) => ({
             ...manager,
@@ -180,7 +167,6 @@ export default function Employees() {
 
     return (
         <div className="flex h-screen overflow-hidden bg-gray-50 font-sans">
-
             {/* Load logged-in user */}
             <CurrentUser onUserLoaded={setCurrentUser} />
 
@@ -193,8 +179,7 @@ export default function Employees() {
 
             {/* Main page */}
             <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-
-                {/* Common header and sidebar toggle */}
+                {/* Common header */}
                 <Header
                     isSidebarOpen={isSidebarOpen}
                     setSidebarOpen={setSidebarOpen}
@@ -203,7 +188,6 @@ export default function Employees() {
 
                 {/* Scrollable content */}
                 <div className="flex-1 overflow-y-auto p-6">
-
                     {/* Page heading */}
                     <div className="mb-6 flex items-center gap-3">
                         <div className="rounded-xl bg-blue-50 p-3 text-blue-600">
@@ -223,10 +207,8 @@ export default function Employees() {
 
                     {/* People table */}
                     <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-
                         {/* Search and totals */}
                         <div className="flex flex-col gap-4 border-b border-gray-100 p-5 sm:flex-row sm:items-center sm:justify-between">
-
                             <div className="relative w-full max-w-md">
                                 <Search
                                     size={18}
@@ -243,7 +225,8 @@ export default function Employees() {
                             </div>
 
                             <div className="text-sm text-gray-500">
-                                Managers: {managers.length} · Employees: {employees.length}
+                                Managers: {managers.length} · Employees:{" "}
+                                {employees.length}
                             </div>
                         </div>
 
@@ -275,7 +258,6 @@ export default function Employees() {
                         {!loading && (
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left">
-
                                     <thead>
                                         <tr className="border-b border-gray-200 text-sm text-gray-500">
                                             <th className="px-6 py-4 font-medium">
@@ -311,7 +293,8 @@ export default function Employees() {
                                                 <td className="px-6 py-4">
                                                     <span
                                                         className={`rounded-full px-3 py-1 text-xs font-medium ${
-                                                            person.displayRole === "Manager"
+                                                            person.displayRole ===
+                                                            "Manager"
                                                                 ? "bg-purple-50 text-purple-700"
                                                                 : "bg-blue-50 text-blue-700"
                                                         }`}
@@ -335,7 +318,6 @@ export default function Employees() {
                                             </tr>
                                         )}
                                     </tbody>
-
                                 </table>
                             </div>
                         )}

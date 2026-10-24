@@ -15,6 +15,9 @@ import Employees from "../pages/Employees";
 import Reports from "../pages/Reports";
 import WebSocketTest from "../pages/WebSocketTest";
 import ChatPage from "../components/ChatPage";
+import PasswordResetRequest from "../pages/PasswordResetRequest";
+import PasswordResetConfirm from "../pages/PasswordResetConfirm";
+import ChangePassword from "../pages/ChangePassword";
 
 function AppRoutes() {
     return (  
@@ -26,7 +29,8 @@ function AppRoutes() {
                 <Route path="/accept-invitation/:token" element={<AcceptInvitation />} />
                 <Route path="/websocket-test/:conversationId" element={<WebSocketTest />} />
                 <Route path="/chat" element={<ChatPage />} />
-
+                <Route path="/password-reset" element={<PasswordResetRequest />} />
+                <Route path="/password-reset/confirm/:token" element={<PasswordResetConfirm />} />
             <Route element={<ProtectedRoute />}>
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/lead" element={<Leads />} />
@@ -37,6 +41,8 @@ function AppRoutes() {
                 <Route path="/trash" element={<Trash />} />
                 <Route path="/employees" element={<Employees/>} />
                 <Route path="/reports" element={<Reports/>} />
+                <Route path="/change-password" element={<ChangePassword/>} />
+                 
             </Route>
 
 

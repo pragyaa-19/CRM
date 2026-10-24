@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import (EmployeeListAPIView,
+from .views import (ChangePasswordAPIView, EmployeeListAPIView,
                     SignUpApi,LoginApi,
                     CurrentUserAPIView,
                     ManagerListAPIView,
@@ -16,5 +16,7 @@ urlpatterns = [
         AvailableEmployeeListAPIView.as_view(),
         name="available-employees"
     ),
+    path("api/change-password/", ChangePasswordAPIView.as_view(), name="change-password")
     
 ]
+
