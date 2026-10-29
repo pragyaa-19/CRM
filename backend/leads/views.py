@@ -8,6 +8,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from .pagination import UserPagination
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
+from subscriptions.models import Subscription
+
 
 class LeadListCreateView(ListCreateAPIView):
     serializer_class = LeadSerializer
@@ -23,7 +26,24 @@ class LeadListCreateView(ListCreateAPIView):
 
     def perform_create(self, serializer):
         user = self.request.user
-        if user.role ==      "employee":
+        company = user.company
+        
+        subscription = Subscription.objects.filter(
+        company=company
+    ).first()
+        
+        
+        if not subscription or subscription.plan == "FREE":
+            lead_count = Lead.objects.filter(
+            company=company,
+            is_deleted=False
+        ).count()
+
+        if lead_count >= 50:
+            raise ValidationError({
+                "error": "Free plan allows a maximum of 50 active leads. Upgrade your plan to add more."
+            })
+        if user.role == "employee":
             serializer.save(
                 company=self.request.user.company,
                 assigned_to = self.request.user

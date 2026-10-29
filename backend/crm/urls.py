@@ -34,6 +34,7 @@ urlpatterns = [
     path("leads/",include("leads.urls")),
     path("teams/",include("teams.urls")),
     path("messages/", include("messanger.urls")),
+    path("subscriptions/", include("subscriptions.urls")),
     path("notifications/", include("notification.urls")),
     path('api/password_reset/', include('django_rest_passwordreset.urls', namespace='password_reset')),
 ]

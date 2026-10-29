@@ -29,6 +29,8 @@ class SignUpApi(CreateAPIView):
             {"message": "Company and manager created successfully."},
             status=status.HTTP_201_CREATED,
         )
+        
+        
 class LoginApi(APIView):
     serializer_class = LoginSerializer
     

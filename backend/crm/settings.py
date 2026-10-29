@@ -50,7 +50,7 @@ INSTALLED_APPS = [
     'teams',
     'messanger',
     'notification',
-    
+    'subscriptions',
     # third-party apps
     "silk",
     "channels",
@@ -205,3 +205,12 @@ CHANNEL_LAYERS = {
 SILK_AUTHORISATION = True
 
 DJANGO_REST_PASSWORDRESET_THROTTLE_CLASSES = []
+
+
+# Stripe configuration
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", default="")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", default="")
+
+# Stripe recurring Price IDs
+STRIPE_MONTHLY_PRICE_ID = os.getenv("STRIPE_MONTHLY_PRICE_ID", default="")
+STRIPE_YEARLY_PRICE_ID = os.getenv("STRIPE_YEARLY_PRICE_ID", default="")

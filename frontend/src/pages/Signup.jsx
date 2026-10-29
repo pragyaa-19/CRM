@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import Navbar from "../components/Navbar";
 
 function Signup() {
   const navigate = useNavigate();
-  
+  const location = useLocation();
+  const selectedPlan = location.state?.selectedPlan;
   // 1. State to hold the user's input
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -37,7 +38,11 @@ function Signup() {
 
       if (response.ok) {
         alert("Account created successfully!");
-        navigate("/login");
+
+        navigate("/login", {
+          state: selectedPlan ? { selectedPlan } : null,
+          replace: true,
+        });
       } else {
         console.log(data);
         alert(data.message || "Signup failed.");
@@ -52,12 +57,12 @@ function Signup() {
     // Changed outer div to flex-col so the Navbar and content stack properly
     <div className="min-h-screen flex flex-col bg-gray-50">
       <Navbar />
-      
+
       {/* Added flex-grow so this container centers the card in the remaining space */}
       <div className="flex-grow flex items-center justify-center p-4">
         {/* The Signup Card */}
         <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-lg ring-1 ring-gray-200">
-          
+
           <div className="mb-8 text-center">
             <h2 className="text-3xl font-bold text-gray-900">Create an account</h2>
             <p className="mt-2 text-sm text-gray-600">Please enter your details to sign up.</p>
@@ -65,7 +70,7 @@ function Signup() {
 
           {/* The Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
-            
+
             {/* Email Input */}
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-900">

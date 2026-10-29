@@ -21,12 +21,14 @@ class SignupSerializer(serializers.Serializer):
             name=validated_data["company_name"])
         
         owner = User.objects.create_user(
-            username=validated_data["owner_name"],
+            username=validated_data["manager_name"],
             company = company,
             email=validated_data["email"],
             password = validated_data["password"],
-            role = "owner")
-        
+            role = "owner",     
+            is_staff = False,
+            is_superuser = False,
+            )
         
         return owner
     
