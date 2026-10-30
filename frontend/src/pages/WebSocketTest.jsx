@@ -3,11 +3,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const API_URL = "http://127.0.0.1:8000";
 const WS_URL = "ws://127.0.0.1:8000";
 
-/* ---------- helpers ---------- */
+/* ---------- Helpers ---------- */
 
-// Read the user id out of the JWT so we can tell "my" messages from others.
-// (SimpleJWT puts it in `user_id`; adjust if your backend uses another claim.)
 function getUserIdFromToken(token) {
+    if (!token) return null;
+
     try {
         const payload = JSON.parse(atob(token.split(".")[1]));
         return payload.user_id ?? payload.sub ?? null;
@@ -15,7 +15,6 @@ function getUserIdFromToken(token) {
         return null;
     }
 }
-
 
 function normalize(raw) {
     let data = raw;
@@ -32,36 +31,47 @@ function normalize(raw) {
         data = { content: String(data) };
     }
 
+    const id = data.id ?? null;
+
     return {
-        id: data.id ?? null,
-
+        id,
         sender: data.sender ?? data.sender_id ?? data.user ?? null,
-
         sender_name: data.sender_name ?? "",
-
         conversation_name: data.conversation_name ?? "",
-
         content: data.content ?? data.message ?? "",
-
         created_at: data.created_at ?? new Date().toISOString(),
-
         is_read: data.is_read ?? false,
-
         is_deleted: data.is_deleted ?? false,
-
         is_edited: data.is_edited ?? false,
-
-        key: data.id ?? `local-${crypto.randomUUID()}`,
+        key: id != null ? `message-${id}` : `local-${crypto.randomUUID()}`,
     };
 }
 
-
-
-// Add messages, skipping any whose server id we already have.
 function mergeMessages(existing, incoming) {
-    const seen = new Set(existing.filter((m) => m.id != null).map((m) => m.id));
-    const fresh = incoming.filter((m) => m.id == null || !seen.has(m.id));
-    return [...existing, ...fresh];
+    const merged = [];
+    const seenIds = new Set();
+    const seenLocalKeys = new Set();
+
+    for (const message of [...existing, ...incoming]) {
+        if (message.id != null) {
+            const idKey = String(message.id);
+
+            if (seenIds.has(idKey)) continue;
+            seenIds.add(idKey);
+        } else {
+            if (seenLocalKeys.has(message.key)) continue;
+            seenLocalKeys.add(message.key);
+        }
+
+        merged.push(message);
+    }
+
+    return merged.sort((a, b) => {
+        return (
+            new Date(a.created_at).getTime() -
+            new Date(b.created_at).getTime()
+        );
+    });
 }
 
 const timeFormat = new Intl.DateTimeFormat(undefined, {
@@ -85,9 +95,9 @@ const STATUS = {
     closed: { label: "Reconnecting…", dot: "bg-red-500" },
 };
 
-/* ---------- component ---------- */
+/* ---------- Component ---------- */
 
-export default function Chat({ conversationId, conversationName, }) {
+export default function Chat({ conversationId, conversationName }) {
     const [messages, setMessages] = useState([]);
     const [draft, setDraft] = useState("");
     const [status, setStatus] = useState("connecting");
@@ -103,100 +113,208 @@ export default function Chat({ conversationId, conversationName, }) {
     const token = localStorage.getItem("access_token");
     const myId = getUserIdFromToken(token);
 
-    /* ----- load history ----- */
+    /* ---------- Load message history ---------- */
+
     useEffect(() => {
+        const controller = new AbortController();
+
         setMessages([]);
         setLoading(true);
         setError(null);
-        const controller = new AbortController();
 
-        (async () => {
+        async function loadHistory() {
             try {
-                const res = await fetch(
+                const response = await fetch(
                     `${API_URL}/messages/api/conversations/${conversationId}/messages/`,
                     {
-                        headers: { Authorization: `Bearer ${token}` },
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
                         signal: controller.signal,
                     }
                 );
 
-                if (!res.ok) throw new Error(`Server responded with ${res.status}`);
+                if (!response.ok) {
+                    throw new Error(
+                        `Server responded with ${response.status}`
+                    );
+                }
 
-                const data = await res.json();
-                const list = Array.isArray(data) ? data : data.results ?? [];
+                const data = await response.json();
 
-                // history first, then anything that arrived over the socket meanwhile
-                setMessages((prev) => mergeMessages(list.map(normalize), prev));
+                const history = (
+                    Array.isArray(data) ? data : data.results ?? []
+                ).map(normalize);
+
+                setMessages((current) =>
+                    mergeMessages(history, current)
+                );
+
                 setError(null);
             } catch (err) {
                 if (err.name !== "AbortError") {
+                    console.error("Unable to load chat history:", err);
                     setError("Couldn't load earlier messages.");
                 }
             } finally {
-                setLoading(false);
+                if (!controller.signal.aborted) {
+                    setLoading(false);
+                }
             }
-        })();
+        }
+
+        loadHistory();
 
         return () => controller.abort();
     }, [conversationId, token]);
 
-    /* ----- websocket with auto-reconnect ----- */
+    /* ---------- WebSocket ---------- */
+
     useEffect(() => {
         let retries = 0;
-        let retryTimer;
+        let retryTimer = null;
         let disposed = false;
+        let currentSocket = null;
+
+        if (!token) {
+            setStatus("closed");
+            setError("Please log in again to connect to chat.");
+            return undefined;
+        }
 
         const connect = () => {
+            if (disposed) return;
+
             setStatus("connecting");
 
-            const ws = new WebSocket(
-                `${WS_URL}/ws/chat/${conversationId}/?token=${token}`
-            );
-            socketRef.current = ws;
+            const encodedToken = encodeURIComponent(token);
 
-            ws.onopen = () => {
+            const socket = new WebSocket(
+                `${WS_URL}/ws/chat/${conversationId}/?token=${encodedToken}`
+            );
+
+            currentSocket = socket;
+            socketRef.current = socket;
+
+            socket.onopen = () => {
+                if (disposed) {
+                    socket.close();
+                    return;
+                }
+
+                console.log(
+                    "Chat WebSocket connected:",
+                    new Date().toISOString()
+                );
+
                 retries = 0;
                 setStatus("open");
             };
 
-            ws.onmessage = (event) => {
-                setMessages((prev) => mergeMessages(prev, [normalize(event.data)]));
+            socket.onmessage = (event) => {
+                if (disposed) return;
+
+                console.log(
+                    "Chat WebSocket message received:",
+                    new Date().toISOString(),
+                    event.data
+                );
+
+                try {
+                    const incomingMessage = normalize(event.data);
+
+                    setMessages((current) =>
+                        mergeMessages(current, [incomingMessage])
+                    );
+                } catch (err) {
+                    console.error(
+                        "Could not process incoming chat message:",
+                        err
+                    );
+                }
             };
 
-            ws.onclose = () => {
+            socket.onerror = (event) => {
+                console.error("Chat WebSocket error:", event);
+                socket.close();
+            };
+
+            socket.onclose = () => {
                 if (disposed) return;
+
+                if (socketRef.current === socket) {
+                    socketRef.current = null;
+                }
+
                 setStatus("closed");
 
-                // exponential backoff: 1s, 2s, 4s … capped at 15s
-                const delay = Math.min(1000 * 2 ** retries, 15000);
+                const delay = Math.min(
+                    1000 * 2 ** retries,
+                    15000
+                );
+
                 retries += 1;
+
+                console.warn(
+                    `Chat WebSocket closed; reconnecting in ${delay}ms.`
+                );
+
                 retryTimer = setTimeout(connect, delay);
             };
-
-            ws.onerror = () => ws.close();
         };
 
         connect();
 
         return () => {
             disposed = true;
-            clearTimeout(retryTimer);
-            socketRef.current?.close();
+
+            if (retryTimer) {
+                clearTimeout(retryTimer);
+            }
+
+            if (currentSocket) {
+                currentSocket.onopen = null;
+                currentSocket.onmessage = null;
+                currentSocket.onerror = null;
+                currentSocket.onclose = null;
+                currentSocket.close();
+            }
+
+            if (socketRef.current === currentSocket) {
+                socketRef.current = null;
+            }
         };
     }, [conversationId, token]);
 
-    /* ----- scrolling ----- */
+    /* ---------- Scrolling ---------- */
+
     const scrollToBottom = useCallback((smooth = true) => {
-        const el = listRef.current;
-        if (!el) return;
-        el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+        const element = listRef.current;
+
+        if (!element) return;
+
+        element.scrollTo({
+            top: element.scrollHeight,
+            behavior: smooth ? "smooth" : "auto",
+        });
     }, []);
 
     const handleScroll = () => {
-        const el = listRef.current;
-        const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        const element = listRef.current;
+
+        if (!element) return;
+
+        const nearBottom =
+            element.scrollHeight -
+            element.scrollTop -
+            element.clientHeight <
+            80;
+
         stickToBottom.current = nearBottom;
-        if (nearBottom) setShowJump(false);
+
+        if (nearBottom) {
+            setShowJump(false);
+        }
     };
 
     useEffect(() => {
@@ -207,58 +325,82 @@ export default function Chat({ conversationId, conversationName, }) {
         }
     }, [messages, loading, scrollToBottom]);
 
-    /* ----- sending ----- */
+    /* ---------- Send message ---------- */
+
     const send = () => {
         const text = draft.trim();
-        const ws = socketRef.current;
+        const socket = socketRef.current;
 
-        if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+        if (
+            !text ||
+            !socket ||
+            socket.readyState !== WebSocket.OPEN
+        ) {
+            return;
+        }
 
-        ws.send(
-            JSON.stringify({
-                content: text,
-            })
-        );
-        setDraft("");
-        stickToBottom.current = true;
+        try {
+            socket.send(
+                JSON.stringify({
+                    content: text,
+                })
+            );
 
-        if (inputRef.current) inputRef.current.style.height = "auto";
+            setDraft("");
+            stickToBottom.current = true;
+
+            if (inputRef.current) {
+                inputRef.current.style.height = "auto";
+            }
+        } catch (err) {
+            console.error("Unable to send chat message:", err);
+            setError("Message could not be sent. Please try again.");
+        }
     };
 
-    const handleKeyDown = (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
+    const handleKeyDown = (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
             send();
         }
     };
 
-    const handleInput = (e) => {
-        setDraft(e.target.value);
-        e.target.style.height = "auto";
-        e.target.style.height = `${Math.min(e.target.scrollHeight, 128)}px`;
+    const handleInput = (event) => {
+        setDraft(event.target.value);
+
+        event.target.style.height = "auto";
+
+        event.target.style.height = `${Math.min(
+            event.target.scrollHeight,
+            128
+        )}px`;
     };
 
     const connected = status === "open";
     const { label, dot } = STATUS[status];
 
-    /* ----- render ----- */
+    /* ---------- Render ---------- */
+
     return (
         <div className="mx-auto flex h-full min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-            {/* header */}
             <header className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
-
                 <h1 className="text-base font-semibold text-gray-900">
-                    {conversationName || messages[0]?.conversation_name || `Conversation #${conversationId}`}
+                    {conversationName ||
+                        messages[0]?.conversation_name ||
+                        `Conversation #${conversationId}`}
                 </h1>
+
                 <div className="flex items-center gap-2 text-xs text-gray-500">
                     <span
-                        className={`h-2 w-2 rounded-full ${dot} ${status === "open" ? "" : "animate-pulse"
-                            }`}
+                        className={`h-2 w-2 rounded-full ${dot} ${
+                            status === "open" ? "" : "animate-pulse"
+                        }`}
                     />
+
                     {label}
                 </div>
             </header>
-            {/* messages */}
+
             <div className="relative flex-1 overflow-hidden">
                 <div
                     ref={listRef}
@@ -279,43 +421,76 @@ export default function Chat({ conversationId, conversationName, }) {
                         </p>
                     )}
 
-                    {!loading && messages.length === 0 && !error && (
-                        <p className="py-10 text-center text-sm text-gray-400">
-                            No messages yet. Say hello!
-                        </p>
-                    )}
-                    {messages.map((msg, i) => {
-                        const prev = messages[i - 1];
-                        const mine = myId != null && String(msg.sender) === String(myId);
-                        const newDay = !prev || !sameDay(prev.created_at, msg.created_at);
-                        const grouped = prev && !newDay && prev.sender === msg.sender;
+                    {!loading &&
+                        messages.length === 0 &&
+                        !error && (
+                            <p className="py-10 text-center text-sm text-gray-400">
+                                No messages yet. Say hello!
+                            </p>
+                        )}
+
+                    {messages.map((message, index) => {
+                        const previous = messages[index - 1];
+
+                        const mine =
+                            myId != null &&
+                            String(message.sender) === String(myId);
+
+                        const newDay =
+                            !previous ||
+                            !sameDay(
+                                previous.created_at,
+                                message.created_at
+                            );
+
+                        const grouped =
+                            previous &&
+                            !newDay &&
+                            String(previous.sender) ===
+                                String(message.sender);
+
                         return (
-                            <div key={msg.key}>
+                            <div key={message.key}>
                                 {newDay && (
                                     <div className="my-4 text-center text-xs text-gray-400">
-                                        {dayFormat.format(new Date(msg.created_at))}
+                                        {dayFormat.format(
+                                            new Date(message.created_at)
+                                        )}
                                     </div>
                                 )}
 
                                 <div
-                                    className={`flex flex-col ${mine ? "items-end" : "items-start"
-                                        } ${grouped ? "mt-1" : "mt-3"}`}
+                                    className={`flex flex-col ${
+                                        mine
+                                            ? "items-end"
+                                            : "items-start"
+                                    } ${
+                                        grouped ? "mt-1" : "mt-3"
+                                    }`}
                                 >
-                                    {!mine && !grouped && msg.sender != null && (
-                                        <span className="mb-1 ml-1 text-xs text-gray-500">
-                                            {msg.sender_name}
-                                        </span>
-                                    )}
+                                    {!mine &&
+                                        !grouped &&
+                                        message.sender != null && (
+                                            <span className="mb-1 ml-1 text-xs text-gray-500">
+                                                {message.sender_name}
+                                            </span>
+                                        )}
 
                                     <div
-                                        className={`max-w-[80%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${mine
-                                            ? "rounded-br-md bg-gray-900 text-white"
-                                            : "rounded-bl-md border border-gray-200 bg-white text-gray-900"
-                                            }`}
+                                        className={`max-w-[80%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+                                            mine
+                                                ? "rounded-br-md bg-blue-800 text-white"
+                                                : "rounded-bl-md border border-white bg-white text-gray-900"
+                                        }`}
                                     >
-                                        {msg.content}
+                                        {message.content}
+
                                         <span className="ml-2 inline-block translate-y-0.5 text-[10px] text-gray-400">
-                                            {timeFormat.format(new Date(msg.created_at))}
+                                            {timeFormat.format(
+                                                new Date(
+                                                    message.created_at
+                                                )
+                                            )}
                                         </span>
                                     </div>
                                 </div>
@@ -326,6 +501,7 @@ export default function Chat({ conversationId, conversationName, }) {
 
                 {showJump && (
                     <button
+                        type="button"
                         onClick={() => {
                             stickToBottom.current = true;
                             scrollToBottom();
@@ -338,7 +514,6 @@ export default function Chat({ conversationId, conversationName, }) {
                 )}
             </div>
 
-            {/* composer */}
             <div className="flex items-end gap-2 border-t border-gray-200 bg-white p-3">
                 <textarea
                     ref={inputRef}
@@ -346,11 +521,16 @@ export default function Chat({ conversationId, conversationName, }) {
                     value={draft}
                     onChange={handleInput}
                     onKeyDown={handleKeyDown}
-                    placeholder={connected ? "Type a message…" : "Waiting for connection…"}
+                    placeholder={
+                        connected
+                            ? "Type a message…"
+                            : "Waiting for connection…"
+                    }
                     className="max-h-32 flex-1 resize-none rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
                 />
 
                 <button
+                    type="button"
                     onClick={send}
                     disabled={!connected || !draft.trim()}
                     className="rounded-xl bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-40"

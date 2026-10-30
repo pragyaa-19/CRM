@@ -26,7 +26,9 @@ SECRET_KEY = config("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["192.168.1.11",
+                 "localhost",
+                 "127.0.0.1"]
 
 
 # Application definition
@@ -47,14 +49,17 @@ INSTALLED_APPS = [
     'invitations',
     'teams',
     'messanger',
-    
+    'notification',
+    'subscriptions',
     # third-party apps
+    "silk",
     "channels",
     'django_cotton',
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
     'django_celery_results',
+    'django_rest_passwordreset',
     
 ]
 
@@ -67,10 +72,12 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'silk.middleware.SilkyMiddleware',
 ]
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
+    "http://192.168.1.11:5173",
 ]
 
 ROOT_URLCONF = 'crm.urls'
@@ -151,7 +158,7 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-AUTH_USER_MODEL = "accounts.User"
+
 
 CELERY_BROKER_URL = "redis://localhost:6379/0"
 CELERY_RESULT_BACKEND = "django-db"
@@ -168,15 +175,16 @@ REST_FRAMEWORK = {
     ),
 }
 
-from dotenv import load_dotenv
 
-load_dotenv()
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=6),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
 }
 
 AUTH_USER_MODEL = "accounts.User"
+from dotenv import load_dotenv
+
+load_dotenv()
 
 #sending mails
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
@@ -193,3 +201,16 @@ CHANNEL_LAYERS = {
         "BACKEND": "channels.layers.InMemoryChannelLayer",
     },
 }
+
+SILK_AUTHORISATION = True
+
+DJANGO_REST_PASSWORDRESET_THROTTLE_CLASSES = []
+
+
+# Stripe configuration
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", default="")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", default="")
+
+# Stripe recurring Price IDs
+STRIPE_MONTHLY_PRICE_ID = os.getenv("STRIPE_MONTHLY_PRICE_ID", default="")
+STRIPE_YEARLY_PRICE_ID = os.getenv("STRIPE_YEARLY_PRICE_ID", default="")

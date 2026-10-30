@@ -6,7 +6,8 @@ import CurrentUser from "../components/CurrentUser";
 import Header from "../components/Header";
 import AddEmployee from "../pages/AddEmployee";
 
-const API_URL = "http://127.0.0.1:8000";
+const API_URL =
+    import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 const Card = ({ children, className = "" }) => (
     <div
@@ -22,6 +23,7 @@ function Trash() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [restoring, setRestoring] = useState(null);
+    const [deleting, setDeleting] = useState(null);
 
     // Sidebar state
     const [isSidebarOpen, setSidebarOpen] = useState(true);
@@ -53,27 +55,26 @@ function Trash() {
                     }
                 );
 
-                const data = await response.json();
+                const data = await response.json().catch(() => null);
 
                 if (!response.ok) {
                     throw new Error(
-                        data.detail || "Unable to load trash."
+                        data?.detail ||
+                            data?.error ||
+                            "Unable to load trash."
                     );
                 }
 
-                // Supports both a regular list and paginated response
+                // Supports both regular and paginated responses
                 const deletedLeads = Array.isArray(data)
                     ? data
-                    : data.results ?? [];
+                    : data?.results ?? [];
 
                 setLeads(deletedLeads);
-
             } catch (err) {
                 if (err.name !== "AbortError") {
                     console.error("Fetch trash error:", err);
-                    setError(
-                        err.message || "Something went wrong."
-                    );
+                    setError(err.message || "Something went wrong.");
                 }
             } finally {
                 if (!controller.signal.aborted) {
@@ -87,10 +88,11 @@ function Trash() {
         return () => controller.abort();
     }, [token]);
 
-    // Restore deleted lead
+    // Restore a deleted lead
     const handleRestore = async (leadId) => {
         try {
             setRestoring(leadId);
+            setError("");
 
             const response = await fetch(
                 `${API_URL}/leads/api/trash/${leadId}/restore/`,
@@ -103,21 +105,22 @@ function Trash() {
                 }
             );
 
-            const data = await response.json();
+            const data = await response.json().catch(() => null);
 
             if (!response.ok) {
                 throw new Error(
-                    data.detail || "Unable to restore lead."
+                    data?.detail ||
+                        data?.error ||
+                        "Unable to restore lead."
                 );
             }
 
-            // Remove restored lead from Trash immediately
+            // Remove restored lead from Trash
             setLeads((prevLeads) =>
                 prevLeads.filter(
                     (lead) => String(lead.id) !== String(leadId)
                 )
             );
-
         } catch (err) {
             console.error("Restore lead error:", err);
             setError(err.message || "Could not restore lead.");
@@ -126,9 +129,56 @@ function Trash() {
         }
     };
 
+    // Permanently delete a lead
+    const handlePermanentDelete = async (leadId) => {
+        const confirmed = window.confirm(
+            "Are you sure you want to permanently delete this lead? This action cannot be undone."
+        );
+
+        if (!confirmed) return;
+
+        try {
+            setDeleting(leadId);
+            setError("");
+
+            const response = await fetch(
+                `${API_URL}/leads/api/leads/${leadId}/permanent-delete/`,
+                {
+                    method: "DELETE",
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                }
+            );
+
+            const data = await response.json().catch(() => null);
+
+            if (!response.ok) {
+                throw new Error(
+                    data?.error ||
+                        data?.detail ||
+                        "Unable to permanently delete lead."
+                );
+            }
+
+            // Remove permanently deleted lead from Trash
+            setLeads((prevLeads) =>
+                prevLeads.filter(
+                    (lead) => String(lead.id) !== String(leadId)
+                )
+            );
+        } catch (err) {
+            console.error("Permanent delete error:", err);
+            setError(
+                err.message || "Could not permanently delete lead."
+            );
+        } finally {
+            setDeleting(null);
+        }
+    };
+
     return (
         <div className="flex h-screen overflow-hidden bg-gray-50 font-sans">
-
             {/* Load logged-in user */}
             <CurrentUser onUserLoaded={setCurrentUser} />
 
@@ -141,8 +191,7 @@ function Trash() {
 
             {/* Main Page Area */}
             <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-
-                {/* Common Header with Sidebar Toggle */}
+                {/* Common Header */}
                 <Header
                     isSidebarOpen={isSidebarOpen}
                     setSidebarOpen={setSidebarOpen}
@@ -151,11 +200,9 @@ function Trash() {
 
                 {/* Scrollable Trash Content */}
                 <div className="flex-1 overflow-y-auto p-6">
-
                     {/* Page Heading */}
                     <div className="mb-6">
                         <div className="flex items-center gap-3">
-
                             <div className="rounded-xl bg-red-50 p-3 text-red-600">
                                 <Trash2 size={24} />
                             </div>
@@ -166,16 +213,14 @@ function Trash() {
                                 </h1>
 
                                 <p className="mt-1 text-sm text-gray-500">
-                                    Deleted leads can be restored from here.
+                                    Deleted leads can be restored or permanently deleted from here.
                                 </p>
                             </div>
-
                         </div>
                     </div>
 
                     {/* Trash Card */}
                     <Card>
-
                         {/* Loading */}
                         {loading && (
                             <div className="p-8 text-center text-gray-500">
@@ -185,20 +230,17 @@ function Trash() {
 
                         {/* Error */}
                         {error && !loading && (
-                            <div className="p-8 text-center text-red-500">
+                            <div className="p-4 text-sm text-red-600">
                                 {error}
                             </div>
                         )}
 
                         {/* Deleted Leads Table */}
-                        {!loading && !error && (
+                        {!loading && (
                             <div className="overflow-x-auto">
-
                                 <table className="w-full text-left">
-
                                     <thead>
                                         <tr className="border-b border-gray-200 text-sm text-gray-500">
-
                                             <th className="px-6 py-4 font-medium">
                                                 Name
                                             </th>
@@ -218,18 +260,15 @@ function Trash() {
                                             <th className="px-6 py-4 font-medium">
                                                 Action
                                             </th>
-
                                         </tr>
                                     </thead>
 
                                     <tbody>
-
                                         {leads.map((lead) => (
                                             <tr
                                                 key={lead.id}
                                                 className="border-b border-gray-100 transition-colors last:border-0 hover:bg-gray-50"
                                             >
-
                                                 <td className="px-6 py-4 font-medium text-gray-900">
                                                     {lead.name}
                                                 </td>
@@ -247,26 +286,48 @@ function Trash() {
                                                 </td>
 
                                                 <td className="px-6 py-4">
+                                                    <div className="flex flex-wrap items-center gap-4">
+                                                        {/* Restore button */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                handleRestore(lead.id)
+                                                            }
+                                                            disabled={
+                                                                restoring === lead.id ||
+                                                                deleting === lead.id
+                                                            }
+                                                            className="flex items-center gap-2 font-medium text-green-600 hover:text-green-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                                        >
+                                                            <RotateCcw size={16} />
 
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            handleRestore(lead.id)
-                                                        }
-                                                        disabled={
-                                                            restoring === lead.id
-                                                        }
-                                                        className="flex items-center gap-2 font-medium text-green-600 hover:text-green-800 disabled:cursor-not-allowed disabled:opacity-50"
-                                                    >
-                                                        <RotateCcw size={16} />
+                                                            {restoring === lead.id
+                                                                ? "Restoring..."
+                                                                : "Restore"}
+                                                        </button>
 
-                                                        {restoring === lead.id
-                                                            ? "Restoring..."
-                                                            : "Restore"}
-                                                    </button>
+                                                        {/* Permanent Delete button */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                handlePermanentDelete(
+                                                                    lead.id
+                                                                )
+                                                            }
+                                                            disabled={
+                                                                deleting === lead.id ||
+                                                                restoring === lead.id
+                                                            }
+                                                            className="flex items-center gap-2 font-medium text-red-600 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                                        >
+                                                            <Trash2 size={16} />
 
+                                                            {deleting === lead.id
+                                                                ? "Deleting..."
+                                                                : "Delete Permanently"}
+                                                        </button>
+                                                    </div>
                                                 </td>
-
                                             </tr>
                                         ))}
 
@@ -281,16 +342,11 @@ function Trash() {
                                                 </td>
                                             </tr>
                                         )}
-
                                     </tbody>
-
                                 </table>
-
                             </div>
                         )}
-
                     </Card>
-
                 </div>
             </main>
 
@@ -300,7 +356,6 @@ function Trash() {
                     onClose={() => setIsModalOpen(false)}
                 />
             )}
-
         </div>
     );
 }

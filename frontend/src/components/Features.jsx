@@ -18,17 +18,14 @@ function Features(){
           
           {/* Here we snap in our Lego blocks and pass them different text! */}
           <FeatureCard
-            icon="🚀"
             title="Blazing Fast"
             text="Our platform is optimized for speed so you never have to wait."
           />
           <FeatureCard
-            icon="🔒"
             title="Super Secure"
             text="Your data is encrypted and stored safely in the cloud."
           />
           <FeatureCard
-            icon="📱"
             title="Mobile Ready"
             text="Access your dashboard from your phone, anywhere in the world."
           />

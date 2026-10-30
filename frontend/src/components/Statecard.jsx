@@ -1,3 +1,4 @@
+
 import {
   DollarSign,
   Briefcase,
@@ -40,14 +41,15 @@ const StatCard = ({ title, value, trend, isPositive, icon }) => (
 
 export default function Statecard() {
   const [leads, setLeads] = useState([]);
-
-  const token = localStorage.getItem("access_token");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchLeads = async () => {
+      const token = localStorage.getItem("access_token");
+
       try {
         const response = await fetch(
-          "http://127.0.0.1:8000/leads/api/create-lead/",
+          "http://127.0.0.1:8000/leads/api/create-lead/?page_size=5",
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -62,32 +64,35 @@ export default function Statecard() {
           return;
         }
 
-        setLeads(data);
+        // DRF pagination returns an object with results.
+        // The fallback also supports an unpaginated array response.
+        const leadsList = Array.isArray(data) ? data : data.results;
+
+        setLeads(Array.isArray(leadsList) ? leadsList : []);
       } catch (error) {
         console.error("Fetch leads error:", error);
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchLeads();
   }, []);
 
-  // Total number of leads/contacts
+  // These currently reflect only the leads returned by this API page.
   const newContacts = leads.length;
 
-  // Calculate win rate
   const wonLeads = leads.filter(
-    (lead) => lead.status.toLowerCase() === "won"
+    (lead) => lead.status?.toLowerCase() === "won"
   ).length;
 
   const winRate =
     leads.length > 0
       ? ((wonLeads / leads.length) * 100).toFixed(1)
-      : 0;
+      : "0.0";
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-
-      {/* Leave this as mock for now */}
       <StatCard
         title="Total Revenue"
         value="$284,500"
@@ -96,7 +101,6 @@ export default function Statecard() {
         icon={<DollarSign size={24} />}
       />
 
-      {/* Leave this as mock for now */}
       <StatCard
         title="Active Deals"
         value="42"
@@ -105,24 +109,21 @@ export default function Statecard() {
         icon={<Briefcase size={24} />}
       />
 
-      {/* REAL DATA */}
       <StatCard
         title="Win Rate"
-        value={`${winRate}%`}
+        value={loading ? "..." : `${winRate}%`}
         trend="2.1"
         isPositive={false}
         icon={<Activity size={24} />}
       />
 
-      {/* REAL DATA */}
       <StatCard
         title="New Contacts"
-        value={newContacts}
+        value={loading ? "..." : newContacts}
         trend="18.2"
         isPositive={true}
         icon={<Users size={24} />}
       />
-
     </div>
   );
 }

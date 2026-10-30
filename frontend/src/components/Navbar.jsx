@@ -7,6 +7,10 @@ function Navbar() {
 
       <div className="flex gap-6">
         <Link
+          to="/" className="text-gray-600 hover:text-blue-600 font-medium">
+          About
+        </Link>
+        <Link
           to="/login" className="text-gray-600 hover:text-blue-600 font-medium">
           Log In
         </Link>

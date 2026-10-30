@@ -12,7 +12,6 @@ class SignupSerializer(serializers.Serializer):
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
             raise serializers.ValidationError("Email already exists")
-
         return value
     
     def create(self, validated_data):
@@ -22,12 +21,14 @@ class SignupSerializer(serializers.Serializer):
             name=validated_data["company_name"])
         
         owner = User.objects.create_user(
-            username=validated_data["owner_name"],
+            username=validated_data["manager_name"],
             company = company,
             email=validated_data["email"],
             password = validated_data["password"],
-            role = "owner")
-        
+            role = "owner",     
+            is_staff = False,
+            is_superuser = False,
+            )
         
         return owner
     
@@ -39,9 +40,15 @@ class LoginSerializer(serializers.Serializer):
     
     
 class CurrentUserSerializer(serializers.ModelSerializer):
+    company_name = serializers.CharField(
+        source="company.name",
+        read_only=True,
+        allow_null=True,
+    )
+    
     class Meta:
         model = User
-        fields = ["first_name", "last_name", "email", "role","username"]
+        fields = ["first_name", "last_name", "email", "role","username","company_name"]
         
 
 class EmployeeSerializer(serializers.ModelSerializer):
@@ -58,3 +65,16 @@ class AvailableEmployeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["id", "first_name", "last_name", "email"]
+        
+        
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True)
+    confirm_password = serializers.CharField(write_only=True)
+    
+    
+    def validate(self, data):
+        if data["new_password"] != data["confirm_password"]:
+            raise serializers.ValidationError("New password and confirm password do not match")
+        
+        return data

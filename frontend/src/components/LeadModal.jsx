@@ -1,8 +1,12 @@
 import { X } from "lucide-react";
 import { useState, useEffect } from "react";
+import { fetchEmployees } from "../api/employees";
 
-export default function LeadModal({ onClose, currentUser, onLeadCreated, }) {
-
+export default function LeadModal({
+  onClose,
+  currentUser,
+  onLeadCreated,
+}) {
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -12,87 +16,82 @@ export default function LeadModal({ onClose, currentUser, onLeadCreated, }) {
   });
 
   const [employees, setEmployees] = useState([]);
+
+  // Fetch employees using the reusable API function
   useEffect(() => {
+    const controller = new AbortController();
 
-    const fetchEmployees = async () => {
-
+    const loadEmployees = async () => {
       try {
-        const response = await fetch(
-          "http://127.0.0.1:8000/api/employees/", {
-
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${localStorage.getItem("access_token")}`,
-          }
-        }
-        );
-        const data = await response.json();
+        const data = await fetchEmployees({
+          signal: controller.signal,
+        });
 
         console.log("Employee API response:", data);
 
-
-        if (!response.ok) {
-          console.error("Employee API failed:", data);
-          return;
-        }
         setEmployees(data);
       } catch (error) {
-        console.error("Error fetching employees:", error);
+        if (error.name !== "AbortError") {
+          console.error("Error fetching employees:", error);
+        }
       }
     };
-    fetchEmployees();
+
+    loadEmployees();
+
+    return () => controller.abort();
   }, []);
 
+  // Handle form input changes
   const handleChange = (e) => {
     const { name, value } = e.target;
+
     setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
   };
 
+  // Create a new lead
   const handleSubmit = async (e) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  const token = localStorage.getItem("access_token");
+    const token = localStorage.getItem("access_token");
 
-  try {
-    const response = await fetch(
-      "http://127.0.0.1:8000/leads/api/create-lead/",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(formData),
+    try {
+      const response = await fetch(
+        "http://127.0.0.1:8000/leads/api/create-lead/",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(formData),
+        }
+      );
+
+      const data = await response.json();
+
+      console.log("Create Lead response:", response.status, data);
+
+      if (!response.ok) {
+        console.error("Create Lead failed:", data);
+        return;
       }
-    );
 
-    const data = await response.json();
+      console.log("Lead created successfully!");
 
-    console.log("Create Lead response:", response.status, data);
-
-    if (!response.ok) {
-      console.error("Create Lead failed:", data);
-      return;
+      onLeadCreated();
+      onClose();
+    } catch (error) {
+      console.error("Create Lead error:", error);
     }
-
-    console.log("Lead created successfully!");
-    onLeadCreated();
-    onClose();
-
-  } catch (error) {
-    console.error("Create Lead error:", error);
-  }
-};
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-
       <div className="bg-white w-full max-w-lg rounded-xl shadow-xl p-6">
-
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold text-gray-900">
@@ -100,6 +99,7 @@ export default function LeadModal({ onClose, currentUser, onLeadCreated, }) {
           </h2>
 
           <button
+            type="button"
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700"
           >
@@ -109,7 +109,6 @@ export default function LeadModal({ onClose, currentUser, onLeadCreated, }) {
 
         {/* Form */}
         <form className="space-y-4" onSubmit={handleSubmit}>
-
           {/* Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -217,10 +216,8 @@ export default function LeadModal({ onClose, currentUser, onLeadCreated, }) {
             </div>
           )}
 
-
           {/* Buttons */}
           <div className="flex justify-end gap-3 pt-4">
-
             <button
               type="button"
               onClick={onClose}
@@ -231,14 +228,11 @@ export default function LeadModal({ onClose, currentUser, onLeadCreated, }) {
 
             <button
               type="submit"
-
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
               Create Lead
             </button>
-
           </div>
-
         </form>
       </div>
     </div>

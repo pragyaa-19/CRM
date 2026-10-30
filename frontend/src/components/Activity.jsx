@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 
 const Card = ({ children, className = "" }) => (
@@ -8,17 +9,20 @@ const Card = ({ children, className = "" }) => (
   </div>
 );
 
-export default function Activity({refresh}) {
+export default function Activity({ refresh }) {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const token = localStorage.getItem("access_token");
-
   const fetchLeads = async () => {
+    setLoading(true);
+    setError("");
+
+    const token = localStorage.getItem("access_token");
+
     try {
       const response = await fetch(
-        "http://127.0.0.1:8000/leads/api/create-lead/",
+        "http://127.0.0.1:8000/leads/api/create-lead/?page_size=5",
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -34,7 +38,10 @@ export default function Activity({refresh}) {
         return;
       }
 
-      setLeads(data);
+      // Handle paginated and unpaginated API responses.
+      const leadsList = Array.isArray(data) ? data : data.results;
+
+      setLeads(Array.isArray(leadsList) ? leadsList : []);
     } catch (error) {
       console.error("Fetch leads error:", error);
       setError("Something went wrong.");
@@ -47,52 +54,39 @@ export default function Activity({refresh}) {
     fetchLeads();
   }, [refresh]);
 
-const formatTime = (date) => {
-  if (!date) return "";
+  const formatTime = (date) => {
+    if (!date) return "";
 
-  const createdDate = new Date(date);
-  const now = new Date();
+    const createdDate = new Date(date);
 
-  console.log("RAW DATE:", date);
-  console.log("CREATED DATE:", createdDate.toString());
-  console.log("NOW:", now.toString());
-  console.log(
-    "DIFFERENCE MINUTES:",
-    (now - createdDate) / (1000 * 60)
-  );
+    if (Number.isNaN(createdDate.getTime())) return "";
 
-  const difference = now - createdDate;
+    const difference = Math.max(0, Date.now() - createdDate.getTime());
 
-  const minutes = Math.floor(difference / (1000 * 60));
-  const hours = Math.floor(difference / (1000 * 60 * 60));
-  const days = Math.floor(difference / (1000 * 60 * 60 * 24));
+    const minutes = Math.floor(difference / (1000 * 60));
+    const hours = Math.floor(difference / (1000 * 60 * 60));
+    const days = Math.floor(difference / (1000 * 60 * 60 * 24));
 
-  if (minutes < 1) {
-    return "Just now";
-  }
+    if (minutes < 1) return "Just now";
 
-  if (minutes < 60) {
-    return `${minutes} minute${minutes !== 1 ? "s" : ""} ago`;
-  }
+    if (minutes < 60) {
+      return `${minutes} minute${minutes !== 1 ? "s" : ""} ago`;
+    }
 
-  if (hours < 24) {
-    return `${hours} hour${hours !== 1 ? "s" : ""} ago`;
-  }
+    if (hours < 24) {
+      return `${hours} hour${hours !== 1 ? "s" : ""} ago`;
+    }
 
-  if (days === 1) {
-    return "Yesterday";
-  }
+    if (days === 1) return "Yesterday";
 
-  return `${days} days ago`;
-};
-  // rest of your existing code...
-  const activities = leads
+    return `${days} days ago`;
+  };
+
+  const activities = [...leads]
     .sort(
-    (a, b) =>
-      new Date(b.created_at) - new Date(a.created_at)
-  )
+      (a, b) => new Date(b.created_at) - new Date(a.created_at)
+    )
     .flatMap((lead) => {
-      console.log("CREATED AT:", lead.created_at);
       const activityList = [];
 
       if (lead.created_at) {
@@ -100,19 +94,22 @@ const formatTime = (date) => {
           id: `created-${lead.id}`,
           text: `New lead created: ${lead.name}`,
           time: formatTime(lead.created_at),
+          createdAt: new Date(lead.created_at).getTime(),
         });
       }
 
-      if (lead.assigned_to_name) {
+      if (lead.assigned_to_name && lead.created_at) {
         activityList.push({
           id: `assigned-${lead.id}`,
           text: `${lead.name} assigned to ${lead.assigned_to_name}`,
           time: formatTime(lead.created_at),
+          createdAt: new Date(lead.created_at).getTime(),
         });
       }
 
       return activityList;
     })
+    .sort((a, b) => b.createdAt - a.createdAt)
     .slice(0, 7);
 
   return (
@@ -145,13 +142,9 @@ const formatTime = (date) => {
             </p>
           ) : (
             activities.map((activity) => (
-              <div
-                key={activity.id}
-                className="flex gap-4"
-              >
+              <div key={activity.id} className="flex gap-4">
                 <div className="flex flex-col items-center">
                   <div className="w-2.5 h-2.5 mt-1.5 bg-blue-500 rounded-full" />
-
                   <div className="w-px h-full bg-gray-200 mt-2" />
                 </div>
 

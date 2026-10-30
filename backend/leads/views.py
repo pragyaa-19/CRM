@@ -6,19 +6,43 @@ from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIV
 from .models import Lead,Activity
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from .pagination import UserPagination
+from rest_framework import status
+from rest_framework.exceptions import ValidationError
+from subscriptions.models import Subscription
+
 
 class LeadListCreateView(ListCreateAPIView):
     serializer_class = LeadSerializer
-    permission_classes = []
-
+    permission_classes = [IsAuthenticated]
+    pagination_class = UserPagination
+    
     def get_queryset(self):
         return Lead.objects.filter(
-            #company=self.request.user.company,
+            company=self.request.user.company,
             is_deleted=False
-        )
+        ).select_related("assigned_to"
+        ).order_by('-created_at')
 
     def perform_create(self, serializer):
         user = self.request.user
+        company = user.company
+        
+        subscription = Subscription.objects.filter(
+        company=company
+    ).first()
+        
+        
+        if not subscription or subscription.plan == "FREE":
+            lead_count = Lead.objects.filter(
+            company=company,
+            is_deleted=False
+        ).count()
+
+        if lead_count >= 50:
+            raise ValidationError({
+                "error": "Free plan allows a maximum of 50 active leads. Upgrade your plan to add more."
+            })
         if user.role == "employee":
             serializer.save(
                 company=self.request.user.company,
@@ -51,8 +75,7 @@ class ActivityListCreateView(ListCreateAPIView):
 
     def get_queryset(self):
         return Activity.objects.filter(
-            lead__company=self.request.user.company,
-            is_deleted=False
+            lead__company=self.request.user.company
         )
 
     def perform_create(self, serializer):
@@ -67,8 +90,7 @@ class ActivityRetrieveUpdateDestroyView(RetrieveUpdateDestroyAPIView):
     
     def get_queryset(self):
         return Activity.objects.filter(
-            lead__company = self.request.user.company,
-            is_deleted = False
+            lead__company = self.request.user.company
         )
         
     def perform_destroy(self, instance):
@@ -108,4 +130,30 @@ class RestoreLeadAPIView(APIView):
 
         return Response(
             {"message": "Lead restored successfully."}
+        )
+        
+        
+        
+        
+class PermanentDeleteLeadAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        try:
+            lead = Lead.objects.get(
+                id=pk,
+                company=request.user.company,
+                is_deleted=True
+            )
+        except Lead.DoesNotExist:
+            return Response(
+                {"error": "Deleted lead not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        lead.delete()
+
+        return Response(
+            {"message": "Lead permanently deleted successfully."},
+            status=status.HTTP_200_OK
         )

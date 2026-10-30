@@ -20,7 +20,7 @@ export default function Activity({refresh}) {
   const fetchLeads = async () => {
     try {
       const response = await fetch(
-        "http://127.0.0.1:8000/leads/api/create-lead/",
+        "http://127.0.0.1:8000/leads/api/create-lead/?page_size=5",
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -31,15 +31,15 @@ export default function Activity({refresh}) {
       const data = await response.json();
 
       if (!response.ok) {
-        console.error("Leads error:", data);
+        //console.error("Leads error:", data);
         setError("Unable to load leads.");
         return;
       }
 
-      console.log("LEADS:", data);
-      setLeads(data);
+      //console.log("LEADS:", data);
+      setLeads(data.results || []);
     } catch (error) {
-      console.error("Fetch leads error:", error);
+      //console.error("Fetch leads error:", error);
       setError("Something went wrong.");
     } finally {
       setLoading(false);

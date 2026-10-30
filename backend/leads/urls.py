@@ -2,7 +2,7 @@ from django.urls import path
 from .views import (ActivityRetrieveUpdateDestroyView,
                     LeadListCreateView, 
                     LeadRetrieveUpdateDestroyView,
-                    ActivityListCreateView,DeletedLeadListAPIView,
+                    ActivityListCreateView,DeletedLeadListAPIView, PermanentDeleteLeadAPIView,
                     RestoreLeadAPIView)
 
 urlpatterns = [
@@ -38,5 +38,10 @@ urlpatterns = [
     "api/trash/<int:pk>/restore/",
     RestoreLeadAPIView.as_view(),
     name="restore-lead"
+),
+    path(
+    "api/leads/<int:pk>/permanent-delete/",
+    PermanentDeleteLeadAPIView.as_view(),
+    name="permanent-delete-lead"
 ),
 ]
